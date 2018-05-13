@@ -5,7 +5,6 @@ import sys
 import pygame
 from pygame.locals import *
 
-
 FPS = 30
 SCREENWIDTH  = 512
 SCREENHEIGHT = 512
@@ -65,7 +64,8 @@ def mainGame():
     
     # get 2 new pipes to add to upperPipes lowerPipes list
     newPipe1 = getRandomPipe()
-    newPipe2 = getRandomPipe()
+    # newPipe2 = getRandomPipe()
+
     # list of upper pipes
     upperPipes = [
         newPipe1[0],
