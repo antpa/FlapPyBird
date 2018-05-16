@@ -22,14 +22,14 @@ def main(arg):
     robotoFont = pygame.font.SysFont("Roboto", 30)
 
     brain = None
-    filename = arg[1] if len(arg) > 1 else "goodplayer.json"
+    filename = arg[2] if len(arg) > 2 else "goodplayer.json"
     if os.path.isfile(filename) :
         with open(filename, 'r') as file :
             brain = NeuralNetwork.fromjson(file.read())
 
     trainningMode = False
     # Populate with players
-    if len(arg) > 2 and arg[2] == "train":
+    if len(arg) > 1 and arg[1] == "train":
         trainningMode = True
         for i in range(0, MAX_POPULATION):
             p = Player(brain)
