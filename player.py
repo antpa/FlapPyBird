@@ -33,19 +33,16 @@ class Player:
                 closestIndex = i
                 closestDistance = d
 
+        # the important thing in reinforcment : the inputs
         inputs = []
-        inputs.append(float(self.y / SCREENHEIGHT))
-        # the y of the lower side of the upper pipe is
-        # the actual Y of the pipes - the PIPEHEIGHT
-        inputs.append(float(pipes[closestIndex]["top"] / SCREENHEIGHT))
-        inputs.append(float(pipes[closestIndex]["bottom"]  /SCREENHEIGHT))
-        inputs.append(float(pipes[closestIndex]["x"] / SCREENWIDTH)) 
-        inputs.append(float(self.velY / VELYMAX)) 
-        inputs.append(float((pipes[closestIndex]["x"] + PIPEWIDTH) / SCREENWIDTH)) 
-        # print(inputs)
+        inputs.append(float(self.y / SCREENHEIGHT)) # the position of the bird
+        inputs.append(float(pipes[closestIndex]["top"] / SCREENHEIGHT)) # the position of the top pipe (the lower Y of the top pipe)
+        inputs.append(float(pipes[closestIndex]["bottom"]  /SCREENHEIGHT)) # the position of the bottom pipe (the higher Y of the bottom pipe)
+        inputs.append(float(pipes[closestIndex]["x"] / SCREENWIDTH)) # the X position of the closest pipe
+        inputs.append(float((pipes[closestIndex]["x"] + PIPEWIDTH) / SCREENWIDTH)) # the X position of the closest pipe INCLUDING the width of the pipe
+        inputs.append(float(self.velY / VELYMAX)) # the current player velocity
 
         h, output = self.brain.predict(array(inputs))
-        # print(str(output[0][0]) + " > " +str(output[1][0]))
         if output[0][0] > output[1][0]:
             self.jump()
 

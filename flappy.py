@@ -14,12 +14,13 @@ savedPlayers = []
 players = []
 
 def main(arg):
-    global robotoFont, bestScoreEver, SCREEN, players, pipes, speed, previous_score, filename, trainningMode
+    global robotoFont, bestScoreEver, SCREEN, players, pipes, speed, previous_score, filename, trainningMode, trainningGen
     pygame.init()
     FPSCLOCK = pygame.time.Clock()
     SCREEN = pygame.display.set_mode((SCREENWIDTH, SCREENHEIGHT))
     pygame.display.set_caption('Flappy Bird')
     robotoFont = pygame.font.SysFont("Roboto", 30)
+    trainningGen = 0
 
     brain = None
     filename = arg[2] if len(arg) > 2 else "goodplayer.json"
@@ -73,8 +74,8 @@ def main(arg):
        # Scores
         showScore(bestPlayerScore, (10,0))
         showScore(bestScoreEver, (10, 25))
-        showScore(len(players), (SCREENWIDTH - 40, 0))            
-
+        showScore(len(players), (SCREENWIDTH - 40, 0))
+        showScore(trainningGen, (SCREENWIDTH - 40, 25))   
         pygame.display.update()
         FPSCLOCK.tick(FPS)
 
@@ -89,19 +90,23 @@ def handleGameEvents() :
         # SPEED UP
         if event.type == KEYDOWN and event.key == K_UP:
             speed += 1
-            print("up")
+            print(speed)
         # SPEED DOWN
         elif event.type == KEYDOWN and event.key == K_DOWN:
             speed -= 1
-            print("down")
+            print(speed)
+
+        if event.type == MOUSEBUTTONUP:
+            save(players[-1])
+            showBestNN(players[- 1])
             
         if speed < 1 :
             speed = 1   
-        if speed > 10 : 
-            speed = 10
+        if speed > 100 : 
+            speed = 100
 
 def update():
-    global previous_score, bestScoreEver, savedPlayers, players, pipes
+    global previous_score, bestScoreEver, savedPlayers, players, pipes, trainningGen
     # move pipes to left
     for pipe in pipes:
         pipe['x'] += PIPEVELX
@@ -136,14 +141,12 @@ def update():
         
     if len(players) == 0:
         if max(previous_score, bestScoreEver) > previous_score :
-            json = savedPlayers[-1].brain.tojson()
-            with open(filename, 'w') as file :
-                file.write(json)
-        
-            showBestNN()
+            save(savedPlayers[-1])
+            showBestNN(savedPlayers[- 1])
             previous_score = max(previous_score, bestScoreEver)
 
         if trainningMode :
+            trainningGen += 1
             players = ga.nextGeneration(savedPlayers)
         else :
             players.append(Player(savedPlayers[-1].brain))
@@ -157,22 +160,24 @@ def update():
 
 def generatePipe():
     # y of gap between upper and lower pipe
-    gapY = random.randrange(0, int(BASEY*0.8 - PIPEGAPSIZE))
-    gapY += int(BASEY * 0.2)
+    gapY = random.randrange(0, int(BASEY - PIPEGAPSIZE))
+    # gapY += int(BASEY * 0.2)
     pipeX = SCREENWIDTH + 10
 
     return {'x': pipeX, 'top': gapY, 'bottom' : gapY + PIPEGAPSIZE}
 
-def showBestNN():
-    if len(savedPlayers) == 0 :
-        return
+def save(player) :
+    json = player.brain.tojson()
+    with open(filename, 'w') as file :
+        file.write(json)
 
+def showBestNN(player):
     print("BEST Input-Hidden")
-    print(savedPlayers[len(savedPlayers) - 1].brain.weight_ih)
+    print(player.brain.weight_ih)
     print("BEST Hidden-Output")
-    print(savedPlayers[len(savedPlayers) - 1].brain.weight_ho)
+    print(player.brain.weight_ho)
     print("Score :")
-    print(savedPlayers[len(savedPlayers) - 1].score)
+    print(player.score)
 
 def showScore(score, pos):
     label = robotoFont.render(str(score), 1, (255,255,255))
@@ -183,7 +188,6 @@ def checkCrash(player, pipes):
     if player.y + player.width >= BASEY - 1 or player.y <= 0:
         return True
     else:
-
         playerRect = pygame.Rect(player.x, player.y, player.width, player.width)
 
         for pipe in pipes:

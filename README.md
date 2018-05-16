@@ -26,6 +26,16 @@ example :
 
 `python flappy.py notrain goodplayer.json` will use the goodplayer.json (or create it if it doesn't exist) to create a player with the same brain and just play.
 
+Tips :
+
+You can speeding up or slowing down the game by using the arrow key : 
+- key up : speed up
+- key down : slow down
+
+By a simple mouse click, you can save your actual runner.
+
+Enjoy
+
 ScreenShot
 ----------
 
