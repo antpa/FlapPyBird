@@ -1,228 +1,204 @@
 from itertools import cycle
 import random
 import sys
-
+from nn import *
 import pygame
 from pygame.locals import *
+from player import Player
+import ga
+from const import *
+import os.path
 
-FPS = 30
-SCREENWIDTH  = 512
-SCREENHEIGHT = 512
-# amount by which base can maximum shift to left
-PIPEGAPSIZE  = 100 # gap between upper and lower part of pipe
-PIPEHEIGHT   = 300
-PIPEWIDTH    = 50
-BASEY        = SCREENHEIGHT * 0.79
-BASEX        = 0
+previous_score = 0
+savedPlayers = []
+players = []
 
-try:
-    xrange
-except NameError:
-    xrange = range
-
-class Player:
-    def __init__(self):
-        self.x = int(SCREENWIDTH * 0.2)
-        self.width = 20
-        self.height = 20
-
-        maxValue = int((SCREENHEIGHT - self.height) / SCREENHEIGHT * 100)
-        minValue = int(self.height / SCREENHEIGHT * 100)
-        self.y = int((SCREENHEIGHT - self.height) * random.randint(minValue, maxValue) / 100 )
-
-         # player velocity, max velocity, downward accleration, accleration on flap
-        self.velY    =  -9   # player's velocity along Y, default same as playerFlapped
-        self.maxVelY =  10   # max vel along Y, max descend speed
-        self.accY    =   1   # players downward accleration
-        self.flapAcc =  -9   # players speed on flapping
-        self.flapped = False # True when player flaps
-
-        self.score = 0
-
-    def update(self, event):
-        if event.type == KEYDOWN and (event.key == K_SPACE or event.key == K_UP):
-            if self.y > -2 * self.height:
-                self.velY = self.flapAcc
-                self.flapped = True
-
-def main():
-    global SCREEN, FPSCLOCK, myfont
+def main(arg):
+    global robotoFont, bestScoreEver, SCREEN, players, pipes, speed, previous_score, filename, trainningMode
     pygame.init()
     FPSCLOCK = pygame.time.Clock()
     SCREEN = pygame.display.set_mode((SCREENWIDTH, SCREENHEIGHT))
     pygame.display.set_caption('Flappy Bird')
-    myfont = pygame.font.SysFont("Comic Sans MS", 30)
+    robotoFont = pygame.font.SysFont("Roboto", 30)
 
+    brain = None
+    filename = arg[1] if len(arg) > 1 else "goodplayer.json"
+    if os.path.isfile(filename) :
+        with open(filename, 'r') as file :
+            brain = NeuralNetwork.fromjson(file.read())
+
+    trainningMode = False
+    # Populate with players
+    if len(arg) > 2 and arg[2] == "train":
+        trainningMode = True
+        for i in range(0, MAX_POPULATION):
+            p = Player(brain)
+            if brain is not None :
+                p.brain.mutate(0.1)
+            players.append(p)
+    else :
+        p = Player(brain)
+        players.append(p)
+
+        
+    # Create pipes
+    newPipe = generatePipe()
+    pipes = [newPipe]
+
+    bestScoreEver = 0
+    speed = 1
     while True:
-        crashInfo = mainGame()
-        showGameOverScreen(crashInfo)
-
-def mainGame():
-    players = []
-    for i in range(0,1):
-        players.append(Player())
-    
-    # get 2 new pipes to add to upperPipes lowerPipes list
-    newPipe1 = getRandomPipe()
-    # newPipe2 = getRandomPipe()
-
-    # list of upper pipes
-    upperPipes = [
-        newPipe1[0],
-        # newPipe2[0],
-    ]
-
-    # list of lowerpipe
-    lowerPipes = [
-        newPipe1[1],
-        # newPipe2[1],
-    ]
-
-    pipeVelX = -4
-
-    while True:
-        playerEvent = type('', (object,),{ 'type': 0, 'key': 0})
-        for event in pygame.event.get():
-            if event.type == QUIT or (event.type == KEYDOWN and event.key == K_ESCAPE):
-                pygame.quit()
-                sys.exit()
-            if event.type == KEYDOWN and (event.key == K_SPACE or event.key == K_UP):
-                playerEvent = event
-
-        # move pipes to left
-        for uPipe, lPipe in zip(upperPipes, lowerPipes):
-            uPipe['x'] += pipeVelX
-            lPipe['x'] += pipeVelX
-
-        # add new pipe when first pipe is about to touch left of screen
-        if 0 < upperPipes[0]['x'] < 5:
-            newPipe = getRandomPipe()
-            upperPipes.append(newPipe[0])
-            lowerPipes.append(newPipe[1])
-
-        # remove first pipe if its out of the screen
-        if upperPipes[0]['x'] < -PIPEWIDTH:
-            upperPipes.pop(0)
-            lowerPipes.pop(0)
-
-        # draw sprites
+        handleGameEvents()
+        for i in range(0, speed) :
+            bestPlayerScore, bestScoreEver = update()
+        
+        # draw
+        # Background
         SCREEN.fill((0,0,0))
 
-        for uPipe, lPipe in zip(upperPipes, lowerPipes):
-            pygame.draw.rect(SCREEN,(255,255,255), (uPipe['x'], uPipe['y'],PIPEWIDTH,PIPEHEIGHT))
-            pygame.draw.rect(SCREEN,(255,255,255), (lPipe['x'], lPipe['y'],PIPEWIDTH,PIPEHEIGHT))
+        # Pipes
+        for pipe in pipes:
+            pygame.draw.rect(SCREEN,(255,255,255), (pipe['x'], pipe['top'] - PIPEHEIGHT,PIPEWIDTH,PIPEHEIGHT))
+            pygame.draw.rect(SCREEN,(255,255,255), (pipe['x'], pipe['bottom'],PIPEWIDTH,PIPEHEIGHT))
 
-        pygame.draw.rect(SCREEN,(255,255,255), (BASEX, BASEY,SCREENWIDTH,BASEY))
+        # Ground
+        pygame.draw.rect(SCREEN,(255,255,255), (BASEX, BASEY,SCREENWIDTH,SCREENHEIGHT - BASEY))
 
+        # Players
         for player in players:
-            player.update(playerEvent)
-            # check for crash here
-            crashTest = checkCrash(player,
-                                upperPipes, lowerPipes)
-            if crashTest[0]:
-                players.remove(player)
-                if len(players) ==0:
-                    return {
-                        'player': player,
-                        'upperPipes': upperPipes,
-                        'lowerPipes': lowerPipes,
-                    }
-
-            # check for score
-            playerMidPos = player.x + player.width / 2
-            for pipe in upperPipes:
-                pipeMidPos = pipe['x'] + PIPEWIDTH / 2
-                if pipeMidPos <= playerMidPos < pipeMidPos + 4:
-                    player.score += 1
-
-            # player's movement
-            if player.velY < player.maxVelY and not player.flapped:
-                player.velY += player.accY
-            if player.flapped:
-                player.flapped = False
-
-            player.y += min(player.velY, BASEY - player.y - player.height)
-
-           
-            # print score so player overlaps the score
-            showScore(player.score)
-            pygame.draw.ellipse(SCREEN, (255,255,255,200), (player.x, player.y, player.width, player.width), 0)
+            box_surface_circle = pygame.Surface((50, 50), pygame.SRCALPHA)
+            pygame.draw.circle(box_surface_circle, (255, 255, 255, 75), (int(player.width/2), int(player.width/2)),int(player.width/2), 0)
+            SCREEN.blit(box_surface_circle, (player.x, player.y))
+       
+       # Scores
+        showScore(bestPlayerScore, (10,0))
+        showScore(bestScoreEver, (10, 25))
+        showScore(len(players), (SCREENWIDTH - 40, 0))            
 
         pygame.display.update()
         FPSCLOCK.tick(FPS)
 
+def handleGameEvents() :
+    global speed
+    for event in pygame.event.get():
+        # QUIT
+        if event.type == QUIT or (event.type == KEYDOWN and event.key == K_ESCAPE):
+            pygame.quit()
+            sys.exit()
 
-def showGameOverScreen(crashInfo):
-    """crashes the player down ans shows gameover image"""
-    player = crashInfo['player']
+        # SPEED UP
+        if event.type == KEYDOWN and event.key == K_UP:
+            speed += 1
+            print("up")
+        # SPEED DOWN
+        elif event.type == KEYDOWN and event.key == K_DOWN:
+            speed -= 1
+            print("down")
+            
+        if speed < 1 :
+            speed = 1   
+        if speed > 10 : 
+            speed = 10
 
-    upperPipes, lowerPipes = crashInfo['upperPipes'], crashInfo['lowerPipes']
+def update():
+    global previous_score, bestScoreEver, savedPlayers, players, pipes
+    # move pipes to left
+    for pipe in pipes:
+        pipe['x'] += PIPEVELX
 
-    while True:
-        for event in pygame.event.get():
-            if event.type == QUIT or (event.type == KEYDOWN and event.key == K_ESCAPE):
-                pygame.quit()
-                sys.exit()
-            if event.type == KEYDOWN and (event.key == K_SPACE or event.key == K_UP):
-                return
+    # add new pipe when last pipe is about to touch left of screen
+    if 0 < pipes[- 1]['x'] < SCREENWIDTH / 3:
+        newPipe = generatePipe()
+        pipes.append(newPipe)
 
-        # draw sprites
-        SCREEN.fill((0,0,0))
+    # remove first pipe if its out of the screen
+    if pipes[0]['x'] < -PIPEWIDTH:
+        pipes.pop(0)
 
-        for uPipe, lPipe in zip(upperPipes, lowerPipes):
-            pygame.draw.rect(SCREEN,(255,255,255), (uPipe['x'], uPipe['y'],PIPEWIDTH, PIPEHEIGHT))
-            pygame.draw.rect(SCREEN,(255,255,255), (lPipe['x'], lPipe['y'],PIPEWIDTH, PIPEHEIGHT))
+    # check crash 
+    i = 0
+    while i < len(players) :
+        player = players[i]
+        crashTest = checkCrash(player, pipes)
+        if crashTest:
+            savedPlayers.append(player)
+            players.remove(player)
+            i -= 1
+        i += 1
 
-        pygame.draw.rect(SCREEN,(255,255,255), (BASEX, BASEY,SCREENWIDTH,BASEY))
-        showScore(player.score)
+    bestPlayerScore = 0
+    for player in players:
+        player.think(pipes)
+        player.update()
+        bestPlayerScore = max(player.score, bestPlayerScore)
+    
+    bestScoreEver = max(bestScoreEver, bestPlayerScore)
+        
+    if len(players) == 0:
+        if max(previous_score, bestScoreEver) > previous_score :
+            json = savedPlayers[-1].brain.tojson()
+            with open(filename, 'w') as file :
+                file.write(json)
+        
+            showBestNN()
+            previous_score = max(previous_score, bestScoreEver)
 
-        pygame.draw.ellipse(SCREEN, (255,255,255,200), (player.x, player.y, player.width, player.width), 0)
+        if trainningMode :
+            players = ga.nextGeneration(savedPlayers)
+        else :
+            players.append(Player(savedPlayers[-1].brain))
 
-        FPSCLOCK.tick(FPS)
-        pygame.display.update()
+        savedPlayers = []        
+        # clear pipes
+        newPipe = generatePipe()
+        pipes = [newPipe]
 
-def getRandomPipe():
-    """returns a randomly generated pipe"""
+    return bestPlayerScore, bestScoreEver
+
+def generatePipe():
     # y of gap between upper and lower pipe
-    gapY = random.randrange(0, int(BASEY * 0.6 - PIPEGAPSIZE))
+    gapY = random.randrange(0, int(BASEY*0.8 - PIPEGAPSIZE))
     gapY += int(BASEY * 0.2)
     pipeX = SCREENWIDTH + 10
 
-    return [
-        {'x': pipeX, 'y': gapY - PIPEHEIGHT},  # upper pipe
-        {'x': pipeX, 'y': gapY + PIPEGAPSIZE}, # lower pipe
-    ]
+    return {'x': pipeX, 'top': gapY, 'bottom' : gapY + PIPEGAPSIZE}
 
+def showBestNN():
+    if len(savedPlayers) == 0 :
+        return
 
-def showScore(score):
-    """displays score in center of screen"""
-    label = myfont.render(str(score), 1, (255,255,255))
-    SCREEN.blit(label, (10, 10))
+    print("BEST Input-Hidden")
+    print(savedPlayers[len(savedPlayers) - 1].brain.weight_ih)
+    print("BEST Hidden-Output")
+    print(savedPlayers[len(savedPlayers) - 1].brain.weight_ho)
+    print("Score :")
+    print(savedPlayers[len(savedPlayers) - 1].score)
 
-def checkCrash(player, upperPipes, lowerPipes):
-    """returns True if player collders with base or pipes."""
+def showScore(score, pos):
+    label = robotoFont.render(str(score), 1, (255,255,255))
+    SCREEN.blit(label, pos)
 
-    # if player crashes into ground
-    if player.y + player.height >= BASEY - 1:
-        return [True, True]
+def checkCrash(player, pipes):
+    # if player crashes into ground or sky
+    if player.y + player.width >= BASEY - 1 or player.y <= 0:
+        return True
     else:
 
-        playerRect = pygame.Rect(player.x, player.y,
-                      player.width, player.height)
+        playerRect = pygame.Rect(player.x, player.y, player.width, player.width)
 
-        for uPipe, lPipe in zip(upperPipes, lowerPipes):
+        for pipe in pipes:
             # upper and lower pipe rects
-            uPipeRect = pygame.Rect(uPipe['x'], uPipe['y'], PIPEWIDTH, PIPEHEIGHT)
-            lPipeRect = pygame.Rect(lPipe['x'], lPipe['y'], PIPEWIDTH, PIPEHEIGHT)
+            uPipeRect = pygame.Rect(pipe['x'], pipe['top'] - PIPEHEIGHT, PIPEWIDTH, PIPEHEIGHT)
+            lPipeRect = pygame.Rect(pipe['x'], pipe['bottom'], PIPEWIDTH, PIPEHEIGHT)
 
             # if bird collided with upipe or lpipe
             uCollide = pixelCollision(playerRect, uPipeRect)
             lCollide = pixelCollision(playerRect, lPipeRect)
 
             if uCollide or lCollide:
-                return [True, False]
+                return True
 
-    return [False, False]
+    return False
 
 def pixelCollision(rect1, rect2):
     """Checks if two objects collide and not just their rects"""
@@ -234,4 +210,4 @@ def pixelCollision(rect1, rect2):
     return True
 
 if __name__ == '__main__':
-    main()
+    main(sys.argv)
